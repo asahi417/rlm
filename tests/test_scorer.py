@@ -6,8 +6,8 @@ import os
 import rlm
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-# if os.path.exists('./tests/output'):
-#     shutil.rmtree('./tests/output')
+if os.path.exists('./tests/output'):
+    shutil.rmtree('./tests/output')
 scorer = rlm.Scorer('albert-base-v1', max_length=32)
 
 
