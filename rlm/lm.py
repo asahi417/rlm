@@ -59,11 +59,7 @@ class Dataset(torch.utils.data.Dataset):
 class RelationEmbedding:
     """ Get embedding representing the relation in between two words by pre-trained LM """
 
-    def __init__(self,
-                 model: str,
-                 max_length: int = 32,
-                 cache_dir: str = None,
-                 num_worker: int = 0):
+    def __init__(self, model: str, max_length: int = 32, cache_dir: str = None, num_worker: int = 0):
         """ Get embedding representing the relation in between two words by pre-trained LM
         :param model: a model name corresponding to a model card in `transformers`
         :param max_length: a model max length if specified, else use model_max_length
@@ -79,6 +75,7 @@ class RelationEmbedding:
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(model, cache_dir=cache_dir)
         self.config = transformers.AutoConfig.from_pretrained(
             model, cache_dir=cache_dir, output_attentions=True, output_hidden_states=True)
+        self.num_hidden_layers = self.config.num_hidden_layers
 
     def __load_model(self):
         """ Load pretrained language model """
@@ -98,11 +95,11 @@ class RelationEmbedding:
         :param word_pairs: a list of two words
         :param batch_size: batch size
         :return:
-            - mask_positions: position of masked token (batch, )
-            - h_list: embedding corresponding to masked token (batch, layer_n + 1, n_hidden)
-            - a_list: weight attending on masked from context (batch, layer_n, head_n, max_sequence)
+            - mask_positions: position of masked token (len(word_pairs), )
+            - h_list: embedding corresponding to masked token (len(word_pairs), layer_n + 1, n_hidden)
+            - a_list: weight attending on masked from context (len(word_pairs), layer_n, head_n, max_sequence)
         """
-        if type(word_pairs[0]) is not list:
+        if type(word_pairs[0]) is str:
             word_pairs = [word_pairs]
         logging.debug('Get relation embedding on {} pairs'.format(len(word_pairs)))
 
@@ -143,12 +140,3 @@ class RelationEmbedding:
     def release_cache(self):
         if self.device == "cuda":
             torch.cuda.empty_cache()
-
-
-if __name__ == '__main__':
-    import numpy as np
-    _model = RelationEmbedding('albert-base-v1', 8)
-    _out = _model.get_embedding([['word', 'note'], ['word', 'note'], ['word', 'note']])
-    print(np.array(_out[0]).shape)
-    print(np.array(_out[1]).shape)
-    print(np.array(_out[2]).shape)

@@ -4,12 +4,13 @@ import json
 from typing import List
 from multiprocessing import Pool
 from itertools import chain
+from tqdm import tqdm
 
 import pandas as pd
 from .lm import RelationEmbedding
 from .data import get_dataset, get_dataset_raw
-from .grid_search import GridSearch
 from .config_manager import ConfigManager
+from .grid_search import GridSearch
 
 __all__ = ('export_csv_summary', 'Scorer')
 default_export_dir = './output'
@@ -25,12 +26,7 @@ def export_csv_summary(export_dir=default_export_dir):
         with open(path_jl, 'r') as f:
             json_line = list(filter(None, map(lambda x: json.loads(x) if len(x) > 0 else None, f.read().split('\n'))))
         logging.debug('jsonline with {} lines'.format(len(json_line)))
-        if os.path.exists('{}.csv'.format(json_line)):
-            df = pd.read_csv('{}.csv'.format(json_line), index_col=0)
-            df_tmp = pd.DataFrame(json_line)
-            df = pd.concat([df, df_tmp])
-        else:
-            df = pd.DataFrame(json_line)
+        df = pd.DataFrame(json_line)
         df = df.drop_duplicates()
         df = df.sort_values(by='accuracy', ascending=False)
         return df
@@ -97,7 +93,7 @@ class Scorer:
     def analogy_test(self,
                      data: str,
                      export_dir: str = default_export_dir,
-                     method: (str, List) = 'embedding_similarity',
+                     method: (str, List) = 'embedding',
                      test: bool = False,
                      batch_size: int = 32,
                      no_inference: bool = False,
@@ -105,29 +101,28 @@ class Scorer:
                      export_prediction: bool = False,
                      negative_permutation_weight: (float, List) = 1.0):
         """ Test Analogy with Relation embedding """
-        logging.debug('## ANALOGY TEST ##')
-        logging.debug('Model inference')
-        config = ConfigManager(export_dir='{}/logit'.format(export_dir), test=test, model=self.model_name, data=data)
+        logging.info('## ANALOGY TEST ##')
+        logging.info('Model inference')
         answers, word_pairs, queries = get_dataset(data=data, test_set=test)
         word_pairs_flatten = list(set(list(chain(*word_pairs))))
-        logging.debug('\t * {} relations'.format(len(word_pairs_flatten)))
+        logging.info('\t * dataset `{}`: {} relations'.format(data, len(word_pairs_flatten)))
+        config = ConfigManager(export_dir='{}/logit'.format(export_dir), test=test, model=self.model_name, data=data)
         if config.flatten_score:
-            logging.debug('\t * load score')
-            mask_positions, h_list, a_list = config.flatten_score
+            word_pairs_flatten, mask_positions, h_list, a_list = config.flatten_score
         else:
             assert not no_inference, '"no_inference==True" but no cache found'
             mask_positions, h_list, a_list = self.lm.get_embedding(word_pairs_flatten, batch_size=batch_size)
-            config.cache_scores(mask_positions, h_list, a_list)
+            config.cache_scores(word_pairs_flatten, mask_positions, h_list, a_list)
 
         if skip_scoring_prediction:
             return
 
-        logging.debug('Get prediction')
+        logging.info('Get prediction')
         assert len(mask_positions) == len(h_list) == len(a_list) == len(word_pairs_flatten),\
             str([len(mask_positions), len(h_list), len(a_list), len(word_pairs_flatten)])
-        mask_position_dict = {'||'.format(w): m for w, m in zip(word_pairs_flatten, mask_positions)}
-        h_dict = {'||'.format(w): m for w, m in zip(word_pairs_flatten, h_list)}
-        a_dict = {'||'.format(w): m for w, m in zip(word_pairs_flatten, a_list)}
+        mask_position_dict = {'||'.join(w): m for w, m in zip(word_pairs_flatten, mask_positions)}
+        h_dict = {'||'.join(w): m for w, m in zip(word_pairs_flatten, h_list)}
+        a_dict = {'||'.join(w): m for w, m in zip(word_pairs_flatten, a_list)}
 
         pool = Pool()
         searcher = GridSearch(
@@ -138,31 +133,36 @@ class Scorer:
             attention_dict=a_dict,
             queries=queries,
             answers=answers,
+            num_hidden_layers=self.lm.num_hidden_layers,
             negative_permutation_weight=negative_permutation_weight,
             export_prediction=export_prediction)
-        logging.debug('\t * start grid search: {} combinations'.format(len(searcher)))
-        logging.debug('\t * multiprocessing  : {} cpus'.format(os.cpu_count()))
+        logging.info('\t * start grid search: {} combinations'.format(len(searcher)))
+        logging.info('\t * multiprocessing  : {} cpus'.format(os.cpu_count()))
+        # json_line = []
+        # for out in tqdm(pool.imap_unordered(searcher.single_run, searcher.index), total=len(searcher.index)):
+        #     json_line.append(out)
         json_line = pool.map(searcher.single_run, searcher.index)
         pool.close()
 
-        logging.debug('\t * export to {}'.format(export_dir))
+        logging.info('\t * export to {}'.format(export_dir))
 
         if export_prediction:
-            logging.debug('export prediction mode')
-            assert len(json_line) == 1, 'more than one config found: {}'.format(len(searcher))
-            json_line = json_line[0]
-            val_set, test_set = get_dataset_raw(data)
-            data_raw = test_set if test else val_set
-            prediction = json_line.pop('prediction')
-            assert len(prediction) == len(data_raw), '{} != {}'.format(len(prediction), len(data_raw))
-            for d, p in zip(data_raw, prediction):
-                d['prediction'] = p
-            os.makedirs('{}/prediction'.format(export_dir), exist_ok=True)
-            _file = '{}/prediction/{}.{}.{}.csv'.format(
-                export_dir, data, self.model_name, config.prefix)
-            pd.DataFrame(data_raw).to_csv(_file)
-            logging.debug("prediction exported: {}".format(_file))
-            return
+            NotImplementedError('TBA')
+            # logging.debug('export prediction mode')
+            # assert len(json_line) == 1, 'more than one config found: {}'.format(len(searcher))
+            # json_line = json_line[0]
+            # val_set, test_set = get_dataset_raw(data)
+            # data_raw = test_set if test else val_set
+            # prediction = json_line.pop('prediction')
+            # assert len(prediction) == len(data_raw), '{} != {}'.format(len(prediction), len(data_raw))
+            # for d, p in zip(data_raw, prediction):
+            #     d['prediction'] = p
+            # os.makedirs('{}/prediction'.format(export_dir), exist_ok=True)
+            # _file = '{}/prediction/{}.{}.{}.csv'.format(
+            #     export_dir, data, self.model_name, config.prefix)
+            # pd.DataFrame(data_raw).to_csv(_file)
+            # logging.debug("prediction exported: {}".format(_file))
+            # return
         # save as a json line
         path_jl = '{}/.cache.{}.jsonl'.format(export_dir, config.prefix)
         if os.path.exists(path_jl):

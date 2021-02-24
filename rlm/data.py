@@ -32,7 +32,7 @@ def wget(url, cache_dir):
 
 def get_dataset_raw(data_name: str, cache_dir: str = default_cache_dir):
     """ Get SAT-type dataset: a list of (answer: int, prompts: list, stem: list, choice: list)"""
-    assert data_name in ['sat', 'u2', 'u4', 'google', 'bats', 'sample'], 'unknown data: {}'.format(data_name)
+    assert data_name in ['sat', 'u2', 'u4', 'google', 'bats', 'debug'], 'unknown data: {}'.format(data_name)
     if not os.path.exists('{}/{}'.format(cache_dir, data_name)):
         url = '{}/{}.zip'.format(root_url_analogy, data_name)
         wget(url, cache_dir)
@@ -56,6 +56,7 @@ def get_dataset(data: str, test_set: bool = True):
 
         _list = [(a, b)]
         _list += list(chain(*list(map(lambda x: comb(*x), dictionary['choice']))))
+        _list += [(b, a) for a, b in _list]
         perm = list(map(lambda x: sampling_permutation(a, b, x[0], x[1]), dictionary['choice']))
         return dictionary['answer'], _list, perm
 

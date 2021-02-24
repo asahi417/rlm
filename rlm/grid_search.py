@@ -1,4 +1,3 @@
-import tqdm
 from itertools import product
 from typing import List
 
@@ -13,7 +12,6 @@ AGGREGATOR = {
 }
 AGGREGATOR_POSITIVE = ['mean', 'max', 'min'] + ['index_{}'.format(i) for i in range(4)]
 AGGREGATOR_NEGATIVE = ['mean', 'max', 'min'] + ['index_{}'.format(i) for i in range(8)]
-PBAR = tqdm.tqdm()
 
 
 def cos_similarity(a: List, b: List):
@@ -36,6 +34,7 @@ class GridSearch:
                  answers,
                  negative_permutation_weight,
                  method,
+                 num_hidden_layers,
                  export_prediction: bool = False):
         """ Grid Searcher """
         # global variables
@@ -51,25 +50,28 @@ class GridSearch:
             negative_permutation_weight = [negative_permutation_weight]
             if type(method) is not list:
                 method = [method]
-        self.all_config = list(product(method, negative_permutation_weight, AGGREGATOR_POSITIVE, AGGREGATOR_NEGATIVE))
+        layers = list(range(num_hidden_layers + 1))
+        self.all_config = list(product(
+            layers, method, negative_permutation_weight, AGGREGATOR_POSITIVE, AGGREGATOR_NEGATIVE))
         self.index = list(range(len(self.all_config)))
 
     def single_run(self, config_index: int):
-        PBAR.update(1)
-        method, np_weight, ppa, npa = self.all_config[config_index]
+        layer, method, np_weight, ppa, npa = self.all_config[config_index]
 
         def get_similarity(word_list):
             assert len(word_list) == 4, len(word_list)
             a, b, c, d = word_list
             q_embedding = self.hidden_state_dict['||'.join([a, b])]
             c_embedding = self.hidden_state_dict['||'.join([c, d])]
+            q_embedding = q_embedding[layer]
+            c_embedding = c_embedding[layer]
             return cos_similarity(q_embedding, c_embedding)
 
-        if method == 'embedding_similarity':
+        if method == 'embedding':
             similarity = list(map(
                 lambda q: [
-                    AGGREGATOR[ppa](list(map(lambda c: list(map(get_similarity, c[0])), q))),
-                    AGGREGATOR[npa](list(map(lambda c: list(map(get_similarity, c[1])), q)))
+                    list(map(lambda c: AGGREGATOR[ppa](list(map(get_similarity, c[0]))), q)),
+                    list(map(lambda c: AGGREGATOR[npa](list(map(get_similarity, c[1]))), q))
                 ], self.queries))
             similarity_merged = list(map(lambda o: list(map(lambda s: s[0] - np_weight * s[1], o)), similarity))
             prediction = list(map(lambda x: x.index(max(x)), similarity_merged))
@@ -80,6 +82,7 @@ class GridSearch:
         accuracy = sum(map(lambda x: int(x[0] == x[1]), zip(prediction, self.answers))) / len(self.answers)
         tmp_config = {
             'method': method,
+            'layer': layer,
             'positive_permutation_aggregation': ppa,
             'negative_permutation_aggregation': npa,
             'negative_permutation_weight': np_weight,

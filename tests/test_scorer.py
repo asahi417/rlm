@@ -5,9 +5,9 @@ import shutil
 import os
 import rlm
 
-logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S')
-# if os.path.exists('./tests/results'):
-#     shutil.rmtree('./tests/results')
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+# if os.path.exists('./tests/output'):
+#     shutil.rmtree('./tests/output')
 scorer = rlm.Scorer('albert-base-v1', max_length=32)
 
 
@@ -18,12 +18,12 @@ class Test(unittest.TestCase):
         scorer.analogy_test(
             test=True,
             export_dir='./tests/output',
-            data='sample',
+            data='debug',
             batch_size=4)
         scorer.analogy_test(
             test=False,
             export_dir='./tests/output',
-            data='sample',
+            data='debug',
             batch_size=4)
         rlm.export_csv_summary(export_dir='./tests/output')
 
