@@ -1,5 +1,9 @@
+""" Grid Searcher """
+import pickle
+import logging
 from itertools import product
 from typing import List
+from tqdm import tqdm
 
 __all__ = 'GridSearch'
 AGGREGATOR = {
@@ -27,21 +31,23 @@ class GridSearch:
 
     def __init__(self,
                  shared_config,
-                 mask_position_dict,
-                 hidden_state_dict,
-                 attention_dict,
+                 word_pairs_flatten,
+                 mask_positions,
+                 path_hidden_state,
+                 path_attention,
                  queries,
                  answers,
                  negative_permutation_weight,
                  method,
-                 num_hidden_layers,
+                 hidden_layer,
                  export_prediction: bool = False):
         """ Grid Searcher """
         # global variables
         self.shared_config = shared_config
-        self.mask_position_dict = mask_position_dict
-        self.hidden_state_dict = hidden_state_dict
-        self.attention_dict = attention_dict
+        self.word_pairs_flatten = word_pairs_flatten
+        self.mask_positions = mask_positions
+        self.path_hidden_state = path_hidden_state
+        self.path_attention = path_attention
         self.queries = queries
         self.answers = answers
         self.export_prediction = export_prediction
@@ -50,21 +56,43 @@ class GridSearch:
             negative_permutation_weight = [negative_permutation_weight]
             if type(method) is not list:
                 method = [method]
-        layers = list(range(num_hidden_layers + 1))
+        self.hidden_layer = hidden_layer
+        self.h_dict, self.a_dict = self.load_statistics(hidden_layer)
         self.all_config = list(product(
-            layers, method, negative_permutation_weight, AGGREGATOR_POSITIVE, AGGREGATOR_NEGATIVE))
+            method, negative_permutation_weight, AGGREGATOR_POSITIVE, AGGREGATOR_NEGATIVE))
         self.index = list(range(len(self.all_config)))
 
+    def load_statistics(self, layer):
+        a_list, h_list = [], []
+        logging.info('\t\t - loading hidden state: layer {}'.format(layer))
+        for p in tqdm(self.path_hidden_state):
+            with open(p, "rb") as fp:
+                h_list += map(lambda x: x[layer], pickle.load(fp))
+        try:
+            logging.info('\t\t - loading attention: layer {}'.format(layer))
+            for p in tqdm(self.path_attention):
+                with open(p, "rb") as fp:
+                    a_list += map(lambda x: x[layer], pickle.load(fp))
+            assert len(self.mask_positions) == len(h_list) == len(a_list) == len(self.word_pairs_flatten), \
+                str([len(self.mask_positions), len(h_list), len(a_list), len(self.word_pairs_flatten)])
+            h_dict = {'||'.join(w): m for w, m in zip(self.word_pairs_flatten, h_list)}
+            a_dict = {'||'.join(w): m for w, m in zip(self.word_pairs_flatten, a_list)}
+            return h_dict, a_dict
+        except IndexError:
+            assert len(self.mask_positions) == len(h_list) == len(self.word_pairs_flatten), \
+                str([len(self.mask_positions), len(h_list), len(self.word_pairs_flatten)])
+            h_dict = {'||'.join(w): m for w, m in zip(self.word_pairs_flatten, h_list)}
+            return h_dict, None
+
     def single_run(self, config_index: int):
-        layer, method, np_weight, ppa, npa = self.all_config[config_index]
+        method, np_weight, ppa, npa = self.all_config[config_index]
+        # mask_position_dict = {'||'.join(w): m for w, m in zip(self.word_pairs_flatten, self.mask_positions)}
 
         def get_similarity(word_list):
             assert len(word_list) == 4, len(word_list)
             a, b, c, d = word_list
-            q_embedding = self.hidden_state_dict['||'.join([a, b])]
-            c_embedding = self.hidden_state_dict['||'.join([c, d])]
-            q_embedding = q_embedding[layer]
-            c_embedding = c_embedding[layer]
+            q_embedding = self.h_dict['||'.join([a, b])]
+            c_embedding = self.h_dict['||'.join([c, d])]
             return cos_similarity(q_embedding, c_embedding)
 
         if method == 'embedding':
@@ -82,7 +110,7 @@ class GridSearch:
         accuracy = sum(map(lambda x: int(x[0] == x[1]), zip(prediction, self.answers))) / len(self.answers)
         tmp_config = {
             'method': method,
-            'layer': layer,
+            'layer': self.hidden_layer,
             'positive_permutation_aggregation': ppa,
             'negative_permutation_aggregation': npa,
             'negative_permutation_weight': np_weight,

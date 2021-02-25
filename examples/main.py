@@ -11,10 +11,10 @@ def main(lm):
 
 
 if __name__ == '__main__':
-    data = 'sat'
     batch = 512
     length = 16
-    models = ['roberta-large', 'bert-large-cased']
-    for m in models:
-        main(m)
+    # bats is large as it gets to be ~ 50GB in total
+    for data in ['sat', 'google', 'u2', 'u4']:
+        for model in ['roberta-large', 'bert-large-cased']:
+            main(model)
     rlm.export_csv_summary()

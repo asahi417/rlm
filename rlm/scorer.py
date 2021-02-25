@@ -5,8 +5,8 @@ import pickle
 from typing import List
 from multiprocessing import Pool
 from itertools import chain
+from glob import glob
 
-import torch
 import pandas as pd
 from .lm import RelationEmbedding
 from .data import get_dataset, get_dataset_raw
@@ -115,10 +115,9 @@ class Scorer:
                 word_pairs_flatten = pickle.load(fp)
             with open('{}/mask_position.{}.pkl'.format(cache_dir, prefix), "rb") as fp:
                 mask_positions = pickle.load(fp)
-            with open('{}/hidden_state.{}.pkl'.format(cache_dir, prefix), "rb") as fp:
-                h_list = pickle.load(fp)
-            with open('{}/attention.{}.pkl'.format(cache_dir, prefix), "rb") as fp:
-                a_list = pickle.load(fp)
+            path_h = glob('{}/hidden_state.{}.*.pkl'.format(cache_dir, prefix))
+            path_a = glob('{}/attention.{}.*.pkl'.format(cache_dir, prefix))
+            assert len(path_h) and len(path_a), FileNotFoundError
             logging.info('load cached logit: skip inference')
         except FileNotFoundError:
             logging.info('no cache found: run inference')
@@ -142,39 +141,38 @@ class Scorer:
                     pickle.dump(h_list, fp)
                 with open('{}/attention.{}.{}.pkl'.format(cache_dir, prefix, s_n), "wb") as fp:
                     pickle.dump(a_list, fp)
+                # self.lm.release_cache()
             with open('{}/mask_position.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
                 pickle.dump(mask_positions, fp)
             with open('{}/word_pairs_flatten.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
                 pickle.dump(word_pairs_flatten, fp)
-
-            self.lm.release_cache()
+            path_h = glob('{}/hidden_state.{}.*.pkl'.format(cache_dir, prefix))
+            path_a = glob('{}/attention.{}.*.pkl'.format(cache_dir, prefix))
 
         if skip_scoring_prediction:
             return
 
         logging.info('Get prediction')
-        assert len(mask_positions) == len(h_list) == len(a_list) == len(word_pairs_flatten),\
-            str([len(mask_positions), len(h_list), len(a_list), len(word_pairs_flatten)])
-        mask_position_dict = {'||'.join(w): m for w, m in zip(word_pairs_flatten, mask_positions)}
-        h_dict = {'||'.join(w): m for w, m in zip(word_pairs_flatten, h_list)}
-        a_dict = {'||'.join(w): m for w, m in zip(word_pairs_flatten, a_list)}
-
-        pool = Pool()
-        searcher = GridSearch(
-            shared_config={'model': self.model_name, 'data': data},
-            method=method,
-            mask_position_dict=mask_position_dict,
-            hidden_state_dict=h_dict,
-            attention_dict=a_dict,
-            queries=queries,
-            answers=answers,
-            num_hidden_layers=self.lm.num_hidden_layers,
-            negative_permutation_weight=negative_permutation_weight,
-            export_prediction=export_prediction)
-        logging.info('\t * start grid search: {} combinations'.format(len(searcher)))
-        logging.info('\t * multiprocessing  : {} cpus'.format(os.cpu_count()))
-        json_line = pool.map(searcher.single_run, searcher.index)
-        pool.close()
+        json_line = []
+        for i in range(self.lm.num_hidden_layers + 1):
+            pool = Pool()
+            searcher = GridSearch(
+                shared_config={'model': self.model_name, 'data': data},
+                method=method,
+                word_pairs_flatten=word_pairs_flatten,
+                mask_positions=mask_positions,
+                path_hidden_state=path_h,
+                path_attention=path_a,
+                queries=queries,
+                answers=answers,
+                hidden_layer=i,
+                negative_permutation_weight=negative_permutation_weight,
+                export_prediction=export_prediction)
+            logging.info('\t * layer            : {}'.format(i))
+            logging.info('\t * start grid search: {} combinations'.format(len(searcher)))
+            logging.info('\t * multiprocessing  : {} cpus'.format(os.cpu_count()))
+            json_line += pool.map(searcher.single_run, searcher.index)
+            pool.close()
 
         logging.info('\t * export to {}'.format(export_dir))
 

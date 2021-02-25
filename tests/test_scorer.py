@@ -20,17 +20,16 @@ class Test(unittest.TestCase):
             export_dir='./tests/output',
             data='debug',
             batch_size=4,
-            max_data_size=100,
-            skip_scoring_prediction=True
+            max_data_size=100
         )
-        # scorer.analogy_test(
-        #     test=False,
-        #     export_dir='./tests/output',
-        #     data='debug',
-        #     batch_size=4,
-        #     max_data_size=100
-        # )
-        # rlm.export_csv_summary(export_dir='./tests/output')
+        scorer.analogy_test(
+            test=False,
+            export_dir='./tests/output',
+            data='debug',
+            batch_size=4,
+            max_data_size=100
+        )
+        rlm.export_csv_summary(export_dir='./tests/output')
 
 
 if __name__ == "__main__":
