@@ -1,15 +1,14 @@
 import logging
 import os
 import json
+import pickle
 from typing import List
 from multiprocessing import Pool
 from itertools import chain
-from tqdm import tqdm
 
 import pandas as pd
 from .lm import RelationEmbedding
 from .data import get_dataset, get_dataset_raw
-from .config_manager import ConfigManager
 from .grid_search import GridSearch
 
 __all__ = ('export_csv_summary', 'Scorer')
@@ -106,13 +105,39 @@ class Scorer:
         answers, word_pairs, queries = get_dataset(data=data, test_set=test)
         word_pairs_flatten = list(set(list(chain(*word_pairs))))
         logging.info('\t * dataset `{}`: {} relations'.format(data, len(word_pairs_flatten)))
-        config = ConfigManager(export_dir='{}/logit'.format(export_dir), test=test, model=self.model_name, data=data)
-        if config.flatten_score:
-            word_pairs_flatten, mask_positions, h_list, a_list = config.flatten_score
-        else:
+        logging.info('\t * model       : {}'.format(self.model_name))
+
+        logging.info('Configuration manager')
+        prefix = 'test' if test else 'valid'
+        cache_dir = os.path.join(export_dir, data, self.model_name)
+        try:
+            with open('{}/word_pairs_flatten.{}.pkl'.format(cache_dir, prefix), "rb") as fp:
+                word_pairs_flatten = pickle.load(fp)
+            with open('{}/mask_position.{}.pkl'.format(cache_dir, prefix), "rb") as fp:
+                mask_positions = pickle.load(fp)
+            with open('{}/hidden_state.{}.pkl'.format(cache_dir, prefix), "rb") as fp:
+                h_list = pickle.load(fp)
+            with open('{}/attention.{}.pkl'.format(cache_dir, prefix), "rb") as fp:
+                a_list = pickle.load(fp)
+            logging.info('load cached logit: skip inference')
+        except FileNotFoundError:
+            logging.info('no cache found: run inference')
             assert not no_inference, '"no_inference==True" but no cache found'
             mask_positions, h_list, a_list = self.lm.get_embedding(word_pairs_flatten, batch_size=batch_size)
-            config.cache_scores(word_pairs_flatten, mask_positions, h_list, a_list)
+
+            logging.info('save logits')
+            os.makedirs(cache_dir, exist_ok=True)
+            if not os.path.exists('{}/config.json'.format(cache_dir)):
+                with open('{}/config.json'.format(cache_dir), 'w') as f:
+                    json.dump({'model': self.model_name, 'data': data}, f)
+            with open('{}/word_pairs_flatten.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
+                pickle.dump(word_pairs_flatten, fp)
+            with open('{}/mask_position.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
+                pickle.dump(mask_positions, fp)
+            with open('{}/hidden_state.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
+                pickle.dump(h_list, fp)
+            with open('{}/attention.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
+                pickle.dump(a_list, fp)
 
         if skip_scoring_prediction:
             return
@@ -138,9 +163,6 @@ class Scorer:
             export_prediction=export_prediction)
         logging.info('\t * start grid search: {} combinations'.format(len(searcher)))
         logging.info('\t * multiprocessing  : {} cpus'.format(os.cpu_count()))
-        # json_line = []
-        # for out in tqdm(pool.imap_unordered(searcher.single_run, searcher.index), total=len(searcher.index)):
-        #     json_line.append(out)
         json_line = pool.map(searcher.single_run, searcher.index)
         pool.close()
 
@@ -164,7 +186,7 @@ class Scorer:
             # logging.debug("prediction exported: {}".format(_file))
             # return
         # save as a json line
-        path_jl = '{}/.cache.{}.jsonl'.format(export_dir, config.prefix)
+        path_jl = '{}/.cache.{}.jsonl'.format(export_dir, prefix)
         if os.path.exists(path_jl):
             with open(path_jl, 'a') as writer:
                 writer.write('\n')
