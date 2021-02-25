@@ -73,8 +73,8 @@ class RelationEmbedding:
         self.model = None
         self.tokenizer = None
         self.config = None
+        self.num_hidden_layers = None
         self.max_length = max_length
-        self.num_hidden_layers = self.config.num_hidden_layers
 
     def __load_model(self):
         """ Load pretrained language model """
@@ -84,6 +84,7 @@ class RelationEmbedding:
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(self.model_name, cache_dir=self.cache_dir)
         self.config = transformers.AutoConfig.from_pretrained(
             self.model_name, cache_dir=self.cache_dir, output_attentions=True, output_hidden_states=True)
+        self.num_hidden_layers = self.config.num_hidden_layers
         self.model = transformers.AutoModelForMaskedLM.from_pretrained(
             self.model_name, config=self.config, cache_dir=self.cache_dir)
         self.model.eval()
