@@ -6,6 +6,7 @@ from typing import List
 from multiprocessing import Pool
 from itertools import chain
 
+import torch
 import pandas as pd
 from .lm import RelationEmbedding
 from .data import get_dataset, get_dataset_raw
@@ -98,13 +99,12 @@ class Scorer:
                      no_inference: bool = False,
                      skip_scoring_prediction: bool = False,
                      export_prediction: bool = False,
-                     negative_permutation_weight: (float, List) = 1.0):
+                     negative_permutation_weight: (float, List) = 1.0,
+                     max_data_size: int = 7000):
         """ Test Analogy with Relation embedding """
         logging.info('## ANALOGY TEST ##')
         logging.info('Model inference')
         answers, word_pairs, queries = get_dataset(data=data, test_set=test)
-        word_pairs_flatten = list(set(list(chain(*word_pairs))))
-        logging.info('\t * dataset `{}`: {} relations'.format(data, len(word_pairs_flatten)))
         logging.info('\t * model       : {}'.format(self.model_name))
 
         logging.info('Configuration manager')
@@ -122,22 +122,32 @@ class Scorer:
             logging.info('load cached logit: skip inference')
         except FileNotFoundError:
             logging.info('no cache found: run inference')
-            assert not no_inference, '"no_inference==True" but no cache found'
-            mask_positions, h_list, a_list = self.lm.get_embedding(word_pairs_flatten, batch_size=batch_size)
+            word_pairs_flatten = list(set(list(chain(*word_pairs))))
+            logging.info('\t * dataset `{}`: {} relations'.format(data, len(word_pairs_flatten)))
 
-            logging.info('save logits')
-            os.makedirs(cache_dir, exist_ok=True)
-            if not os.path.exists('{}/config.json'.format(cache_dir)):
-                with open('{}/config.json'.format(cache_dir), 'w') as f:
-                    json.dump({'model': self.model_name, 'data': data}, f)
-            with open('{}/word_pairs_flatten.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
-                pickle.dump(word_pairs_flatten, fp)
+            assert not no_inference, '"no_inference==True" but no cache found'
+            mask_positions = []
+            for s_n, n in enumerate(range(0, len(word_pairs_flatten), max_data_size)):
+                logging.info('Subset: {}:{}'.format(n, min(n + max_data_size, len(word_pairs_flatten))))
+                word_pairs_flatten_sub = word_pairs_flatten[n:min(n + max_data_size, len(word_pairs_flatten))]
+                mask_positions_, h_list, a_list \
+                    = self.lm.get_embedding(word_pairs_flatten_sub, batch_size=batch_size)
+                mask_positions += mask_positions_
+                logging.info('\t * save logits')
+                os.makedirs(cache_dir, exist_ok=True)
+                if not os.path.exists('{}/config.json'.format(cache_dir)):
+                    with open('{}/config.json'.format(cache_dir), 'w') as f:
+                        json.dump({'model': self.model_name, 'data': data}, f)
+                with open('{}/hidden_state.{}.{}.pkl'.format(cache_dir, prefix, s_n), "wb") as fp:
+                    pickle.dump(h_list, fp)
+                with open('{}/attention.{}.{}.pkl'.format(cache_dir, prefix, s_n), "wb") as fp:
+                    pickle.dump(a_list, fp)
             with open('{}/mask_position.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
                 pickle.dump(mask_positions, fp)
-            with open('{}/hidden_state.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
-                pickle.dump(h_list, fp)
-            with open('{}/attention.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
-                pickle.dump(a_list, fp)
+            with open('{}/word_pairs_flatten.{}.pkl'.format(cache_dir, prefix), "wb") as fp:
+                pickle.dump(word_pairs_flatten, fp)
+
+            self.lm.release_cache()
 
         if skip_scoring_prediction:
             return

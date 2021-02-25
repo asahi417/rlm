@@ -131,7 +131,7 @@ class RelationEmbedding:
                     lambda a: list(map(lambda a_: a_[0][:, :, a_[1]].cpu().tolist(), zip(a, mask_position))),
                     output['attentions']))
 
-                # batch x layer x head x h_n
+                # batch x layer x head
                 a_list += list(map(list, zip(*attentions)))
 
                 mask_positions += mask_position
