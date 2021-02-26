@@ -18,11 +18,16 @@ AGGREGATOR_POSITIVE = ['mean', 'max', 'min'] + ['index_{}'.format(i) for i in ra
 AGGREGATOR_NEGATIVE = ['mean', 'max', 'min'] + ['index_{}'.format(i) for i in range(8)]
 
 
+def euc_distance(a: List, b: List):
+    assert len(a) == len(b)
+    return sum(map(lambda x: (x[0] - x[1])**2, zip(a, b))) ** 0.5
+
+
 def cos_similarity(a: List, b: List):
     assert len(a) == len(b)
+    inner_prod = sum(map(lambda x: x[0] * x[1], zip(a, b)))
     norm_a = sum(map(lambda x: x * x, a)) ** 0.5
     norm_b = sum(map(lambda x: x * x, b)) ** 0.5
-    inner_prod = sum(map(lambda x: x[0] * x[1], zip(a, b)))
     return inner_prod / (norm_a * norm_b)
 
 
@@ -87,15 +92,18 @@ class GridSearch:
     def single_run(self, config_index: int):
         method, np_weight, ppa, npa = self.all_config[config_index]
         # mask_position_dict = {'||'.join(w): m for w, m in zip(self.word_pairs_flatten, self.mask_positions)}
+        if method in ['embedding_cos', 'embedding_euc']:
 
-        def get_similarity(word_list):
-            assert len(word_list) == 4, len(word_list)
-            a, b, c, d = word_list
-            q_embedding = self.h_dict['||'.join([a, b])]
-            c_embedding = self.h_dict['||'.join([c, d])]
-            return cos_similarity(q_embedding, c_embedding)
+            def get_similarity(word_list):
+                assert len(word_list) == 4, len(word_list)
+                a, b, c, d = word_list
+                q_embedding = self.h_dict['||'.join([a, b])]
+                c_embedding = self.h_dict['||'.join([c, d])]
+                if method == 'embedding_cos':
+                    return cos_similarity(q_embedding, c_embedding)
+                else:
+                    return - euc_distance(q_embedding, c_embedding)
 
-        if method == 'embedding':
             similarity = list(map(
                 lambda q: [
                     list(map(lambda c: AGGREGATOR[ppa](list(map(get_similarity, c[0]))), q)),

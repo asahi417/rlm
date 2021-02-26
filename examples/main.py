@@ -6,8 +6,8 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logg
 
 def main(lm):
     scorer = rlm.Scorer(lm, max_length=length)
-    scorer.analogy_test(test=True, data=data, batch_size=batch)
-    scorer.analogy_test(test=False, data=data, batch_size=batch)
+    scorer.analogy_test(test=True, data=data, batch_size=batch, method=['embedding_cos', 'embedding_euc'])
+    scorer.analogy_test(test=False, data=data, batch_size=batch, method=['embedding_cos', 'embedding_euc'])
 
 
 if __name__ == '__main__':

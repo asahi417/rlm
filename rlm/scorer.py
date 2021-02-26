@@ -93,7 +93,7 @@ class Scorer:
     def analogy_test(self,
                      data: str,
                      export_dir: str = default_export_dir,
-                     method: (str, List) = 'embedding',
+                     method: (str, List) = 'embedding_cos',
                      test: bool = False,
                      batch_size: int = 32,
                      no_inference: bool = False,
