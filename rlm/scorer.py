@@ -28,11 +28,13 @@ def export_csv_summary(export_dir=default_export_dir):
         logging.debug('jsonline with {} lines'.format(len(json_line)))
         df = pd.DataFrame(json_line)
         df = df.drop_duplicates()
-        df = df.sort_values(by='accuracy', ascending=False)
         return df
 
     df_val = _export_csv_summary(True)
+    sort_key = list(df_val.columns)
+    df_val = df_val.sort_values(by=sort_key)
     df_test = _export_csv_summary(False)
+    df_test = df_test.sort_values(by=sort_key)
 
     accuracy_val = df_val.pop('accuracy').to_numpy()
     accuracy_test = df_test.pop('accuracy').to_numpy()
@@ -41,8 +43,6 @@ def export_csv_summary(export_dir=default_export_dir):
     df_test['accuracy_validation'] = accuracy_val
     df_test['accuracy_test'] = accuracy_test
 
-    df_test['accuracy'] = (accuracy_val * 37 + accuracy_test * 337) / (37 + 337)
-    df_test = df_test.sort_values(by=['accuracy'], ascending=False)
     df_test.to_csv('{}/summary.full.csv'.format(export_dir))
 
 

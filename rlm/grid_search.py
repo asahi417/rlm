@@ -91,7 +91,6 @@ class GridSearch:
 
     def single_run(self, config_index: int):
         method, np_weight, ppa, npa = self.all_config[config_index]
-        # mask_position_dict = {'||'.join(w): m for w, m in zip(self.word_pairs_flatten, self.mask_positions)}
         if method in ['embedding_cos', 'embedding_euc']:
 
             def get_similarity(word_list):
